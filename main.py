@@ -245,8 +245,11 @@ async def get_home():
         .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
         .btn-secondary:hover { background: #e2e8f0; }
         .results-section { display: none; }
-        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #f1f5f9; }
+        .results-header { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #f1f5f9; }
         .results-header h2 { font-size: 1.75rem; color: #1e293b; font-weight: 700; }
+        .filter-section { display: flex; gap: 1rem; align-items: center; }
+        .filter-section label { font-weight: 500; color: #475569; }
+        select { padding: 0.625rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; background: white; font-size: 0.95rem; cursor: pointer; }
         .stats { display: flex; gap: 1.5rem; }
         .stat { text-align: center; padding: 0.75rem 1.25rem; background: #f8fafc; border-radius: 0.5rem; border: 1px solid #e2e8f0; }
         .stat-value { font-size: 1.5rem; font-weight: 700; display: block; }
@@ -274,6 +277,10 @@ async def get_home():
         .modal-image { max-width: 100%; height: auto; display: block; margin: 1.5rem auto; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .modal-title { font-size: 1.35rem; margin-bottom: 0.75rem; color: #0f172a; font-weight: 700; }
         .modal-issues { color: #475569; font-size: 1rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #3b82f6; }
+        .modal-nav { display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem; }
+        .nav-btn { background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-size: 1rem; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+        .nav-btn:hover { background: #2563eb; transform: translateY(-1px); }
+        .nav-btn:disabled { background: #94a3b8; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -298,6 +305,14 @@ async def get_home():
         <div class="card results-section" id="results">
             <div class="results-header">
                 <h2>Scan Results</h2>
+                <div class="filter-section">
+                    <label for="statusFilter">Filter by Status:</label>
+                    <select id="statusFilter">
+                        <option value="all">All</option>
+                        <option value="Passed">Passed</option>
+                        <option value="Flagged">Flagged</option>
+                    </select>
+                </div>
                 <div class="stats" id="stats"></div>
             </div>
             <table id="resultsTable">
@@ -323,11 +338,17 @@ async def get_home():
             <h2 id="modalTitle" class="modal-title"></h2>
             <p id="modalIssues" class="modal-issues"></p>
             <img id="modalImage" class="modal-image" src="" alt="Preview">
+            <div class="modal-nav">
+                <button id="prevBtn" class="nav-btn">← Previous</button>
+                <button id="nextBtn" class="nav-btn">Next →</button>
+            </div>
         </div>
     </div>
 
     <script>
         let allResults = [];
+        let filteredResults = [];
+        let currentModalIndex = 0;
         
         document.getElementById('scanBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('imageInput');
@@ -348,13 +369,24 @@ async def get_home():
             try {
                 const response = await fetch('/scan', { method: 'POST', body: formData });
                 allResults = await response.json();
-                displayResults(allResults);
+                filteredResults = [...allResults];
+                displayResults(filteredResults);
             } catch (error) {
                 alert('Error scanning images: ' + error);
             } finally {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('scanBtn').disabled = false;
             }
+        });
+        
+        document.getElementById('statusFilter').addEventListener('change', (e) => {
+            const filter = e.target.value;
+            if (filter === 'all') {
+                filteredResults = [...allResults];
+            } else {
+                filteredResults = allResults.filter(r => r.status === filter);
+            }
+            displayResults(filteredResults);
         });
         
         function displayResults(results) {
@@ -382,18 +414,19 @@ async def get_home():
             const tbody = document.getElementById('resultsBody');
             tbody.innerHTML = '';
             results.forEach((result, index) => {
+                const originalIndex = allResults.findIndex(r => r.filename === result.filename);
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${result.filename}</td>
-                    <td class="${result.status === 'Passed' ? 'status-passed' : 'status-flagged'}" data-index="${index}">${result.status}</td>
+                    <td class="${result.status === 'Passed' ? 'status-passed' : 'status-flagged'}" data-index="${originalIndex}">${result.status}</td>
                     <td>${result.issues}</td>
-                    <td><button class="view-btn" data-index="${index}">View</button></td>
+                    <td><button class="view-btn" data-index="${originalIndex}">View</button></td>
                 `;
                 tbody.appendChild(row);
             });
             document.querySelectorAll('.view-btn, .status-flagged').forEach(el => {
                 el.addEventListener('click', (e) => {
-                    const index = e.target.dataset.index;
+                    const index = parseInt(e.target.dataset.index);
                     openModal(index);
                 });
             });
@@ -402,12 +435,35 @@ async def get_home():
         }
         
         function openModal(index) {
-            const result = allResults[index];
+            currentModalIndex = index;
+            updateModal();
+            document.getElementById('imageModal').style.display = 'block';
+        }
+        
+        function updateModal() {
+            const result = allResults[currentModalIndex];
             document.getElementById('modalTitle').textContent = result.filename;
             document.getElementById('modalIssues').textContent = result.issues;
             document.getElementById('modalImage').src = result.thumbnail;
-            document.getElementById('imageModal').style.display = 'block';
+            
+            // Update nav button states
+            document.getElementById('prevBtn').disabled = currentModalIndex === 0;
+            document.getElementById('nextBtn').disabled = currentModalIndex === allResults.length - 1;
         }
+        
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            if (currentModalIndex > 0) {
+                currentModalIndex--;
+                updateModal();
+            }
+        });
+        
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            if (currentModalIndex < allResults.length - 1) {
+                currentModalIndex++;
+                updateModal();
+            }
+        });
         
         document.querySelector('.close-btn').addEventListener('click', () => {
             document.getElementById('imageModal').style.display = 'none';
