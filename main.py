@@ -255,7 +255,12 @@ async def get_home():
         .stat-value { font-size: 1.5rem; font-weight: 700; display: block; }
         .stat-label { font-size: 0.85rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; }
-        thead th { padding: 1rem 1.25rem; text-align: left; border-bottom: 2px solid #e2e8f0; background: #f8fafc; font-weight: 700; color: #475569; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; position: sticky; top: 0; }
+        thead th { padding: 1rem 1.25rem; text-align: left; border-bottom: 2px solid #e2e8f0; background: #f8fafc; font-weight: 700; color: #475569; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; position: sticky; top: 0; cursor: pointer; user-select: none; }
+        thead th:hover { background: #e2e8f0; }
+        thead th.active { background: #e0ecff; color: #1e3a8a; }
+        .sort-icon { margin-left: 0.5rem; opacity: 0.5; }
+        .sort-icon.asc::after { content: "↑"; }
+        .sort-icon.desc::after { content: "↓"; }
         tbody tr { transition: all 0.2s ease; }
         tbody tr:hover { background: #f8fafc; }
         tbody td { padding: 1.25rem; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; }
@@ -318,9 +323,9 @@ async def get_home():
             <table id="resultsTable">
                 <thead>
                     <tr>
-                        <th>File Name</th>
-                        <th>Status</th>
-                        <th>Detected Issue</th>
+                        <th data-sort="filename">File Name<span class="sort-icon"></span></th>
+                        <th data-sort="status">Status<span class="sort-icon"></span></th>
+                        <th data-sort="issues">Detected Issue<span class="sort-icon"></span></th>
                         <th>Preview</th>
                     </tr>
                 </thead>
@@ -349,6 +354,8 @@ async def get_home():
         let allResults = [];
         let filteredResults = [];
         let currentModalIndex = 0;
+        let sortField = null;
+        let sortDirection = 'asc';
         
         document.getElementById('scanBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('imageInput');
@@ -370,6 +377,9 @@ async def get_home():
                 const response = await fetch('/scan', { method: 'POST', body: formData });
                 allResults = await response.json();
                 filteredResults = [...allResults];
+                sortField = null;
+                sortDirection = 'asc';
+                clearSortIcons();
                 displayResults(filteredResults);
             } catch (error) {
                 alert('Error scanning images: ' + error);
@@ -386,8 +396,59 @@ async def get_home():
             } else {
                 filteredResults = allResults.filter(r => r.status === filter);
             }
+            if (sortField) {
+                sortResults(filteredResults);
+            }
             displayResults(filteredResults);
         });
+        
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (sortField === field) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortField = field;
+                    sortDirection = 'asc';
+                }
+                clearSortIcons();
+                th.classList.add('active');
+                const icon = th.querySelector('.sort-icon');
+                icon.classList.add(sortDirection);
+                sortResults(filteredResults);
+                displayResults(filteredResults);
+            });
+        });
+        
+        function clearSortIcons() {
+            document.querySelectorAll('th').forEach(th => {
+                th.classList.remove('active');
+                const icon = th.querySelector('.sort-icon');
+                if (icon) {
+                    icon.classList.remove('asc', 'desc');
+                }
+            });
+        }
+        
+        function sortResults(results) {
+            results.sort((a, b) => {
+                let valueA = a[sortField];
+                let valueB = b[sortField];
+                
+                if (typeof valueA === 'string') {
+                    valueA = valueA.toLowerCase();
+                    valueB = valueB.toLowerCase();
+                }
+                
+                if (valueA < valueB) {
+                    return sortDirection === 'asc' ? -1 : 1;
+                }
+                if (valueA > valueB) {
+                    return sortDirection === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
         
         function displayResults(results) {
             // Calculate stats
